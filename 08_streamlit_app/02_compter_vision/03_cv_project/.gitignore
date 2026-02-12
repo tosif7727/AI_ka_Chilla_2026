@@ -1,0 +1,31 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment
+.env
+
+# Streamlit
+.streamlit/
+
+# Models
+models/*.pt
+!models/.gitkeep
+
+# Data
+data/
+recordings/
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

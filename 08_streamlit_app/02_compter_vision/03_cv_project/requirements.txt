@@ -1,0 +1,18 @@
+# Core Dependencies - Latest versions with pre-built wheels
+streamlit
+opencv-python
+numpy
+pillow
+
+# Deep Learning & Computer Vision
+ultralytics
+torch
+torchvision
+
+# Utilities
+python-dotenv
+pandas
+matplotlib
+
+# Note: If you encounter installation issues, you can install packages individually:
+# pip install streamlit opencv-python numpy pillow ultralytics python-dotenv pandas matplotlib
