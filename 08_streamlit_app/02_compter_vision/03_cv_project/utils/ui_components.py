@@ -1,8 +1,15 @@
+# ❌ MISTAKE: Remove this opening triple quote
 """
 UI Components Module
 ====================
 Reusable UI components for the Streamlit interface.
 """
+# ✅ FIX: Keep the comment style but remove triple quotes, or use # for comments
+
+# ✅ CORRECT: Use # for module header comments instead
+# UI Components Module
+# ====================
+# Reusable UI components for the Streamlit interface.
 
 import streamlit as st
 import tempfile
@@ -21,7 +28,7 @@ def render_sidebar() -> tuple:
         st.session_state.camera_list = []
     
     with st.sidebar:
-        st.image("https://img.icons8.com/?size=100&id=l88MYrSg2nAT&format=png&color=000000", width=80)
+        st.image("https://img.icons8.com/?size=100&id=l88MYrSg2nAT&format=png&color=000000 ", width=80)
         st.title("⚙️ Configuration")
         
         st.markdown("---")
@@ -64,7 +71,7 @@ def render_sidebar() -> tuple:
                         if not source_name:
                             source_name = uploaded_file.name
 
-            if st.button("➕ Add Channel", use_container_width=True):
+            if st.button("➕ Add Channel", width='stretch):
                 if new_source is not None:
                     name = source_name if source_name else f"Cam {len(st.session_state.camera_list) + 1}"
                     st.session_state.camera_list.append({"name": name, "source": new_source, "active": True})
@@ -125,7 +132,7 @@ def render_sidebar() -> tuple:
         # Developer Tools
         st.markdown("---")
         st.subheader("🛠️ Developer Tools")
-        if st.button("🔔 Send Test Alert", use_container_width=True):
+        if st.button("🔔 Send Test Alert", width='content'):
             if 'alerts' not in st.session_state:
                 st.session_state.alerts = []
             st.session_state.alerts.append({
@@ -500,3 +507,6 @@ def render_alerts(alerts: List[Dict]):
     
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
+
+# ❌ MISTAKE: Remove this closing triple quote - it was wrapping entire file
+# """
