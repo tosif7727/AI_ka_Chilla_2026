@@ -36,59 +36,52 @@ class PeopleDetector:
                 pass
     
     def detect_people(self, frame: np.ndarray) -> Tuple[np.ndarray, int]:
-        """
-        Detect people in frame
-        
-        Args:
-            frame: Input frame
-            
-        Returns:
-            Tuple of (annotated frame, people count)
-        """
+        """Backward compatible detection method"""
+        results = self.predict_people(frame)
+        annotated_frame = self.annotate_people(frame, results)
+        return annotated_frame, len(results)
+
+    def predict_people(self, frame: np.ndarray) -> List:
+        """Run inference only"""
         if self.model is None:
-            # Fallback: Use Haar Cascade if YOLO not available
-            return self._detect_with_cascade(frame)
+            # Fallback for when YOLO is missing (using cascade internally for now)
+            # For consistency with the split architecture, we'll just return the cascade rects
+            return self._detect_with_cascade_rects(frame)
         
         # Run YOLO detection
-        results = self.model(frame, conf=self.confidence_threshold, classes=[0])  # class 0 = person
+        results = self.model(frame, conf=self.confidence_threshold, classes=[0], verbose=False)
         
-        # Count people
-        people_count = len(results[0].boxes)
-        
-        # Annotate frame manually
+        # Extract boxes
+        boxes = []
+        if len(results) > 0:
+            for box in results[0].boxes:
+                b = box.xyxy[0].cpu().numpy().astype(int)
+                boxes.append(b)
+        return boxes
+
+    def annotate_people(self, frame: np.ndarray, boxes: List) -> np.ndarray:
+        """Draw detections on frame"""
         annotated_frame = frame.copy()
-        for box in results[0].boxes:
-            b = box.xyxy[0].cpu().numpy().astype(int)
-            cv2.rectangle(annotated_frame, (b[0], b[1]), (b[2], b[3]), (0, 255, 0), 1)
-        
-        return annotated_frame, people_count
+        for b in boxes:
+            cv2.rectangle(annotated_frame, (b[0], b[1]), (b[2], b[3]), (0, 255, 0), 2)
+        return annotated_frame
     
     def _detect_with_cascade(self, frame: np.ndarray) -> Tuple[np.ndarray, int]:
-        """
-        Fallback detection using Haar Cascade
-        
-        Args:
-            frame: Input frame
-            
-        Returns:
-            Tuple of (annotated frame, people count)
-        """
-        # Load cascade classifier
+        """Original fallback method (kept for safe fallback)"""
+        rects = self._detect_with_cascade_rects(frame)
+        annotated = self.annotate_people(frame, rects)
+        return annotated, len(rects)
+
+    def _detect_with_cascade_rects(self, frame: np.ndarray) -> List:
+        """Get rects using cascade"""
         cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbody.xml')
-        
-        # Convert to grayscale
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # Detect people
         people = cascade.detectMultiScale(gray, 1.1, 4)
-        
-        # Draw rectangles
+        # Convert (x,y,w,h) to (x1,y1,x2,y2)
+        rects = []
         for (x, y, w, h) in people:
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        
-        # Don't add text overlay - count shown in header
-        
-        return frame, len(people)
+            rects.append([x, y, x+w, y+h])
+        return rects
 
 
 class ActionDetector:
@@ -97,16 +90,11 @@ class ActionDetector:
     def __init__(self, model_path: str = "yolov8n-pose.pt", confidence_threshold: float = 0.4, sensitivity: str = "Medium"):
         """
         Initialize action detector
-        
-        Args:
-            model_path: Path to pose estimation model
-            confidence_threshold: Detection confidence threshold
-            sensitivity: Sensitivity level ("Low", "Medium", "High")
         """
         self.confidence_threshold = confidence_threshold
         self.sensitivity = sensitivity
         self.model = None
-        self.last_alerts = {} # Cooldown tracker: {person_id: {action_type: timestamp}}
+        self.last_alerts = {} 
         
         if YOLO_AVAILABLE:
             try:
@@ -115,71 +103,75 @@ class ActionDetector:
                 pass
     
     def detect_actions(self, frame: np.ndarray) -> Tuple[np.ndarray, List[Dict]]:
-        """
-        Detect suspicious actions in frame
-        
-        Args:
-            frame: Input frame
-            
-        Returns:
-            Tuple of (annotated frame, list of detected actions)
-        """
-        actions = []
-        annotated_frame = frame.copy()
-        
+        """Backward compatible method"""
+        actions, results_obj = self.predict_actions(frame)
+        annotated_frame = self.annotate_actions(frame, actions, results_obj)
+        return annotated_frame, actions
+
+    def predict_actions(self, frame: np.ndarray) -> Tuple[List[Dict], Any]:
+        """Run inference and analysis"""
         if self.model is None:
-            # Add placeholder text
-            cv2.putText(
-                annotated_frame,
-                "Action Detection: Model Loading...",
-                (20, 50),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 165, 255),
-                2
-            )
-            return annotated_frame, actions
-        
+            return [], None
+            
         # Run pose detection
-        results = self.model(frame, conf=self.confidence_threshold)
+        results = self.model(frame, conf=self.confidence_threshold, verbose=False)
+        actions = []
         
-        # Analyze poses and draw detections
+        # Analyze poses
         if len(results) > 0:
             boxes = results[0].boxes
             keypoints = results[0].keypoints
             
             for i in range(len(boxes)):
-                # Get box coordinates
-                box = boxes[i].xyxy[0].cpu().numpy().astype(int)
-                x1, y1, x2, y2 = box
-                
                 # Analyze pose for this person
                 action = None
                 if keypoints is not None and len(keypoints) > i:
                     action = self._analyze_pose(keypoints[i], i)
                 
                 if action:
+                    # Append box coordinates to action for drawing later
+                    box = boxes[i].xyxy[0].cpu().numpy().astype(int)
+                    action['box'] = box
+                    # Store keypoints index for drawing skeleton if needed
+                    # (Simplified: we'll just store the index)
+                    action['keypoint_idx'] = i
                     actions.append(action)
-                    # COLOR SUSPICIOUS PERSON RED
-                    color = (0, 0, 255)  # Red BGR
-                    thickness = 3
                     
-                    # Draw box
-                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, thickness)
-                    
-                    # Draw alert label
-                    label = f"⚠️ {action['type'].upper()}!"
-                    label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
-                    # Draw label background
-                    cv2.rectangle(annotated_frame, (x1, y1 - label_size[1] - 10), (x1 + label_size[0], y1), color, -1)
-                    # Draw text
-                    cv2.putText(annotated_frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                    
-                    # Highlight skeleton in red
-                    if keypoints is not None and len(keypoints) > i:
-                        self._draw_skeleton(annotated_frame, keypoints[i], color)
+        return actions, results
+
+    def annotate_actions(self, frame: np.ndarray, actions: List[Dict], results_obj: Any) -> np.ndarray:
+        """Draw actions on frame"""
+        annotated_frame = frame.copy()
         
-        return annotated_frame, actions
+        if self.model is None:
+            cv2.putText(annotated_frame, "Model Loading...", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 2)
+            return annotated_frame
+
+        # If no actions, return original (maybe draw all skeletons? default behavior was only draw alert skeletons)
+        # Original behavior: "COLOR SUSPICIOUS PERSON RED"
+        
+        for action in actions:
+            box = action.get('box')
+            if box is None: continue
+            
+            x1, y1, x2, y2 = box
+            color = (0, 0, 255) # Red
+            thickness = 3
+            
+            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, thickness)
+            
+            label = f"⚠️ {action['type'].upper()}!"
+            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+            cv2.rectangle(annotated_frame, (x1, y1 - label_size[1] - 10), (x1 + label_size[0], y1), color, -1)
+            cv2.putText(annotated_frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            # Skeleton
+            if results_obj and len(results_obj) > 0:
+                idx = action.get('keypoint_idx')
+                if idx is not None:
+                     self._draw_skeleton(annotated_frame, results_obj[0].keypoints[idx], color)
+        
+        return annotated_frame
 
     def _draw_skeleton(self, frame, keypoints, color):
         """Draw pose skeleton for a single person"""

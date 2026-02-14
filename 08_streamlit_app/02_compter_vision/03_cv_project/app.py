@@ -156,11 +156,12 @@ def initialize_session_state():
         st.session_state.total_count = 0
     if 'alerts' not in st.session_state:
         st.session_state.alerts = []
-    if 'detector' not in st.session_state:
-        # Load detector once in session state
+    if 'detector' not in st.session_state or not hasattr(st.session_state.detector, 'annotate_people'):
+        # Load detector once in session state (or reload if stale)
         with st.spinner("🔄 Loading Base AI model..."):
             st.session_state.detector = PeopleDetector()
-    if 'action_detector' not in st.session_state:
+            
+    if 'action_detector' not in st.session_state or not hasattr(st.session_state.action_detector, 'annotate_actions'):
         with st.spinner("🔄 Loading Action AI model..."):
             st.session_state.action_detector = ActionDetector()
     if 'cameras' not in st.session_state:
@@ -184,6 +185,9 @@ def main():
     st.session_state.detector.confidence_threshold = confidence
     st.session_state.action_detector.confidence_threshold = confidence
     st.session_state.action_detector.sensitivity = sensitivity
+    
+    # Statistics Header
+    stats_placeholder = st.empty()
 
     # Main area
     col_main, col_side = st.columns([3, 1])
@@ -217,8 +221,6 @@ def main():
                     placeholders[i] = st.empty()
 
     with col_side:
-        st.subheader("📊 Monitoring")
-        stats_placeholder = st.empty()
         st.subheader("🚨 Recent Alerts")
         alerts_placeholder = st.empty()
 
@@ -232,8 +234,18 @@ def main():
                 except Exception as e:
                     st.error(f"Failed to connect to {cam_cfg['name']}")
 
+        # Initialize persistence for frame skipping
+        if 'frame_count' not in st.session_state:
+            st.session_state.frame_count = 0
+        if 'last_results' not in st.session_state:
+            st.session_state.last_results = {} # {cam_idx: {'people': [], 'actions': [], 'action_res': None}}
+
         while st.session_state.camera_active:
             current_total_count = 0
+            st.session_state.frame_count += 1
+            
+            # Run detection every 3 frames to prevent lag
+            run_detection = (st.session_state.frame_count % 3 == 0)
             
             for i, cam_cfg in enumerate(active_cams):
                 if i not in st.session_state.cameras: continue
@@ -241,42 +253,69 @@ def main():
                 frame = st.session_state.cameras[i].get_frame()
                 if frame is None: continue
                 
-                # Detection
-                processed_frame = frame.copy() # Use a copy for drawing
+                # Initialize result storage for this camera if needed
+                if i not in st.session_state.last_results:
+                    st.session_state.last_results[i] = {'people': [], 'actions': [], 'action_res': None}
+                
+                processed_frame = frame.copy()
                 cam_count = 0
                 
+                # --- DETECTION PHASE ---
+                if run_detection:
+                    # People Detection
+                    if detection_mode in ["People Counting", "Both"]:
+                        people_boxes = st.session_state.detector.predict_people(frame)
+                        st.session_state.last_results[i]['people'] = people_boxes
+                        cam_count = len(people_boxes)
+                    
+                    # Action Detection
+                    if detection_mode in ["Suspicious Actions", "Both"]:
+                        actions, action_res = st.session_state.action_detector.predict_actions(frame)
+                        st.session_state.last_results[i]['actions'] = actions
+                        st.session_state.last_results[i]['action_res'] = action_res
+                        
+                        # Alert Logic (only run when we detect new things)
+                        current_time = time.time()
+                        for action in actions:
+                            action_key = f"{cam_cfg['name']}_{action['type']}"
+                            is_new_action = action_key not in st.session_state.last_alert_time or (current_time - st.session_state.last_alert_time[action_key] > 10)
+                            
+                            if is_new_action:
+                                alert_msg = f"[{cam_cfg['name']}] {action['description']}"
+                                recent_msgs = [a['message'] for a in st.session_state.alerts[-5:]]
+                                if alert_msg not in recent_msgs:
+                                    st.session_state.alerts.append({
+                                        'type': 'warning',
+                                        'message': alert_msg,
+                                        'time': time.strftime("%H:%M:%S")
+                                    })
+                                    if len(st.session_state.alerts) > 100:
+                                        st.session_state.alerts = st.session_state.alerts[-100:]
+                                    st.session_state.last_alert_time[action_key] = current_time
+
+                # --- DRAWING PHASE (Always run using last known results) ---
+                # Draw People
                 if detection_mode in ["People Counting", "Both"]:
-                    processed_frame, cam_count = st.session_state.detector.detect_people(processed_frame)
+                    people_boxes = st.session_state.last_results[i]['people']
+                    processed_frame = st.session_state.detector.annotate_people(processed_frame, people_boxes)
+                    cam_count = len(people_boxes)
                     current_total_count += cam_count
                 
+                # Draw Actions
                 if detection_mode in ["Suspicious Actions", "Both"]:
-                    # Important: run detection on clean frame (not the one with people-counting boxes)
-                    # for better accuracy, but draw on the same processed_frame
-                    processed_frame, actions = st.session_state.action_detector.detect_actions(processed_frame)
+                    actions = st.session_state.last_results[i]['actions']
+                    action_res = st.session_state.last_results[i]['action_res']
+                    processed_frame = st.session_state.action_detector.annotate_actions(processed_frame, actions, action_res)
                     
-                    # Alert logic with cooldown (10 seconds per action type)
-                    current_time = time.time()
-                    for action in actions:
-                        action_key = f"{cam_cfg['name']}_{action['type']}"
-                        
-                        # Use a 10-second cooldown for better responsiveness
-                        is_new_action = action_key not in st.session_state.last_alert_time or (current_time - st.session_state.last_alert_time[action_key] > 10)
-                        
-                        if is_new_action:
-                            alert_msg = f"[{cam_cfg['name']}] {action['description']}"
-                            
-                            # Deduplicate
-                            recent_msgs = [a['message'] for a in st.session_state.alerts[-5:]]
-                            
-                            if alert_msg not in recent_msgs:
-                                st.session_state.alerts.append({
-                                    'type': 'warning',
-                                    'message': alert_msg,
-                                    'time': time.strftime("%H:%M:%S")
-                                })
-                                if len(st.session_state.alerts) > 100:
-                                    st.session_state.alerts = st.session_state.alerts[-100:]
-                                st.session_state.last_alert_time[action_key] = current_time
+                    # Draw Warning Overlay for high confidence actions
+                    if actions:
+                        # Prioritize most critical action
+                        primary_action = actions[0]
+                        processed_frame = draw_warning_overlay(
+                            processed_frame, 
+                            primary_action['type'], 
+                            primary_action['description']
+                        )
                 
                 # Update Video
                 placeholders[i].image(processed_frame, channels="BGR", use_container_width=True)
@@ -289,7 +328,8 @@ def main():
             with alerts_placeholder:
                 render_alerts(st.session_state.alerts)
             
-            time.sleep(0.01)
+            # Small sleep to yield to UI thread, but keep it minimal
+            time.sleep(0.001)
 
     # Footer
     st.markdown("---")

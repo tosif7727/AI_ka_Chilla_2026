@@ -7,6 +7,7 @@ Reusable UI components for the Streamlit interface.
 import streamlit as st
 import tempfile
 import os
+import time
 from typing import List, Dict
 
 def render_sidebar() -> tuple:
@@ -148,7 +149,7 @@ def render_sidebar() -> tuple:
 
 def render_stats(people_count: int, mode: str):
     """
-    Render professional statistics dashboard
+    Render professional statistics dashboard with premium UI
     
     Args:
         people_count: Current people count
@@ -172,231 +173,330 @@ def render_stats(people_count: int, mode: str):
     
     # Calculate uptime
     uptime = datetime.now() - st.session_state.start_time
-    uptime_str = f"{uptime.seconds // 60}m {uptime.seconds % 60}s"
+    hours, remainder = divmod(uptime.seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    uptime_str = f"{hours}h {minutes}m {seconds}s"
     
-    # Status color
+    # Status color logic
     if people_count == 0:
-        status_color = "#3498db"  # Blue
-        status_icon = "🔵"
-        status_text = "Monitoring"
+        status_color = "#3498db"
+        status_text = "Active"
     elif people_count < 10:
-        status_color = "#2ecc71"  # Green
-        status_icon = "🟢"
-        status_text = "Normal"
+        status_color = "#2ecc71"
+        status_text = "Safe"
     elif people_count < 30:
-        status_color = "#f39c12"  # Orange
-        status_icon = "🟡"
-        status_text = "Moderate"
+        status_color = "#f39c12"
+        status_text = "Crowded"
     else:
-        status_color = "#e74c3c"  # Red
-        status_icon = "🔴"
-        status_text = "High Traffic"
-    
-    # Render modern stats cards
-    st.markdown(f"""
+        status_color = "#e74c3c"
+        status_text = "Critical"
+
+    # Define CSS
+    css = f"""
     <style>
-        .metric-card {{
+        .stat-dashboard {{
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 1rem;
             background: white;
-            padding: 1.5rem;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            border-left: 4px solid {status_color};
-            margin-bottom: 1rem;
-            transition: all 0.3s ease;
-        }}
-        
-        .metric-card:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }}
-        
-        .metric-value {{
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: {status_color};
-            margin: 0.5rem 0;
-            line-height: 1;
-        }}
-        
-        .metric-label {{
-            font-size: 0.9rem;
-            color: #7f8c8d;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-weight: 600;
-        }}
-        
-        .metric-icon {{
-            font-size: 2rem;
-            float: right;
-        }}
-        
-        .status-badge {{
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            background: {status_color}15;
-            color: {status_color};
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 0.9rem;
-            margin-top: 0.5rem;
-        }}
-        
-        .mini-metric {{
-            background: #f8f9fa;
-            padding: 0.8rem;
-            border-radius: 8px;
-            margin: 0.5rem 0;
-            display: flex;
-            justify-content: space-between;
+            border-radius: 16px;
+            padding: 1.2rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
             align-items: center;
         }}
         
-        .mini-metric-label {{
-            font-size: 0.85rem;
-            color: #666;
+        .stat-item {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 0 0.8rem;
+            border-right: 1px solid #eee;
+            transition: all 0.3s ease;
         }}
         
-        .mini-metric-value {{
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: #333;
+        .stat-item:last-child {{
+            border-right: none;
+        }}
+        
+        .stat-label {{
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #7f8c8d;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            text-align: center;
+            white-space: nowrap;
+        }}
+        
+        .stat-value {{
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #2c3e50;
+            line-height: 1.2;
+            font-family: 'Inter', sans-serif;
+            text-align: center;
+        }}
+        
+        .stat-icon {{
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            opacity: 0.8;
+        }}
+        
+        .live-indicator {{
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: {status_color};
+            box-shadow: 0 0 10px {status_color};
+            animation: pulse-dot 2s infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+            margin-bottom: 4px;
+        }}
+        
+        @keyframes pulse-dot {{
+            0% {{ box-shadow: 0 0 0 0 {status_color}40; }}
+            70% {{ box-shadow: 0 0 0 10px {status_color}00; }}
+            100% {{ box-shadow: 0 0 0 0 {status_color}00; }}
+        }}
+        
+        .stat-highlight {{
+            color: {status_color};
+        }}
+
+        /* Responsive adjustments */
+        @media (max-width: 900px) {{
+            .stat-dashboard {{
+                grid-template-columns: repeat(3, 1fr);
+                gap: 1.5rem;
+            }}
+            .stat-item {{
+                border-right: none;
+                border-bottom: 1px solid #eee;
+                padding-bottom: 1rem;
+            }}
+            .stat-item:nth-last-child(-n+2) {{
+                border-bottom: none;
+                padding-bottom: 0;
+            }}
         }}
     </style>
+    """
+
+    # Define HTML content - Use a list to avoid indentation issues
+    html_parts = [
+        '<div class="stat-dashboard">',
+        '    <div class="stat-item">',
+        '        <div class="stat-icon">👥</div>',
+        '        <div class="stat-label">Live Count</div>',
+        f'        <div class="stat-value stat-highlight"><span class="live-indicator"></span>{people_count}</div>',
+        '    </div>',
+        '    <div class="stat-item">',
+        '        <div class="stat-icon">📈</div>',
+        '        <div class="stat-label">Peak Detected</div>',
+        f'        <div class="stat-value">{st.session_state.max_count}</div>',
+        '    </div>',
+        '    <div class="stat-item">',
+        '        <div class="stat-icon">⏱️</div>',
+        '        <div class="stat-label">System Uptime</div>',
+        f'        <div class="stat-value" style="font-size: 1.4rem;">{uptime_str}</div>',
+        '    </div>',
+        '    <div class="stat-item">',
+        '        <div class="stat-icon">🛡️</div>',
+        '        <div class="stat-label">Security Status</div>',
+        f'        <div class="stat-value" style="font-size: 1.1rem; color: {status_color};">{status_text}</div>',
+        '    </div>',
+        '    <div class="stat-item">',
+        '        <div class="stat-icon">⚡</div>',
+        '        <div class="stat-label">Engine Mode</div>',
+        f'        <div class="stat-value" style="font-size: 1.1rem;">{mode.split()[0]}</div>',
+        '    </div>',
+        '</div>'
+    ]
+    html_content = "\n".join(html_parts)
     
-    <div class="metric-card">
-        <div class="metric-icon">{status_icon}</div>
-        <div class="metric-label">Current Count</div>
-        <div class="metric-value">{people_count}</div>
-        <div class="status-badge">{status_icon} {status_text}</div>
-    </div>
-    
-    <div class="metric-card">
-        <div class="metric-icon">📊</div>
-        <div class="metric-label">Peak Count</div>
-        <div class="metric-value">{st.session_state.max_count}</div>
-    </div>
-    
-    <div class="mini-metric">
-        <span class="mini-metric-label">⏱️ Uptime</span>
-        <span class="mini-metric-value">{uptime_str}</span>
-    </div>
-    
-    <div class="mini-metric">
-        <span class="mini-metric-label">🎯 Mode</span>
-        <span class="mini-metric-value">{mode}</span>
-    </div>
-    
-    <div class="mini-metric">
-        <span class="mini-metric-label">🤖 Engine</span>
-        <span class="mini-metric-value">YOLOv8</span>
-    </div>
-    """, unsafe_allow_html=True)
+    # Render everything in one go
+    st.markdown(css + html_content, unsafe_allow_html=True)
 
 
 def render_alerts(alerts: List[Dict]):
     """
-    Render professional alert notifications
+    Render professional alert notifications with premium animation
     
     Args:
         alerts: List of alert dictionaries
     """
     st.markdown("""
     <style>
-        .alert-container {
+        .alert-feed {
+            max-height: 600px;
+            overflow-y: auto;
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column-reverse; /* Newest at top */
+        }
+        
+        .alert-card {
             background: white;
             border-radius: 12px;
             padding: 1rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 0.8rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border-left: 4px solid #ddd;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
         }
         
-        .alert-item {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 1rem;
-            border-radius: 8px;
-            margin: 0.5rem 0;
+        .alert-card:hover {
+            transform: translateX(4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        
+        .alert-card.warning {
+            border-left-color: #ff4757;
+            background: linear-gradient(to right, #fff 0%, #fff5f6 100%);
+        }
+        
+        .alert-card.info {
+            border-left-color: #2ed573;
+            background: linear-gradient(to right, #fff 0%, #f0fff4 100%);
+        }
+        
+        /* Pulse animation for the most recent alert */
+        .alert-card:last-child {
+            animation: slideIn 0.5s ease-out, glow 2s infinite;
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes glow {
+            0% { box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+            50% { box-shadow: 0 2px 15px rgba(255, 71, 87, 0.2); }
+            100% { box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        }
+        
+        .alert-icon-box {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
             display: flex;
             align-items: center;
-            gap: 0.8rem;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
         }
         
-        .alert-item.success {
-            background: #d4edda;
-            border-left-color: #28a745;
+        .warning .alert-icon-box {
+            background: #ffe0e3;
+            color: #ff4757;
         }
         
-        .alert-icon {
-            font-size: 1.5rem;
+        .info .alert-icon-box {
+            background: #dff9fb;
+            color: #2ed573;
         }
         
-        .alert-text {
-            flex: 1;
+        .alert-content {
+            flex-grow: 1;
+        }
+        
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.4rem;
+        }
+        
+        .alert-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: #2f3542;
+        }
+        
+        .alert-time {
+            font-size: 0.75rem;
+            color: #a4b0be;
+            font-family: monospace;
+            background: #f1f2f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        
+        .alert-message {
             font-size: 0.9rem;
-            color: #333;
-            font-weight: 500;
+            color: #57606f;
+            line-height: 1.4;
         }
         
-        .no-alerts {
+        .empty-state {
             text-align: center;
-            padding: 2rem 1rem;
-            color: #28a745;
-        }
-        
-        .no-alerts-icon {
-            font-size: 3rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        .no-alerts-text {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: #28a745;
+            padding: 3rem;
+            color: #a4b0be;
         }
     </style>
     """, unsafe_allow_html=True)
     
     if not alerts:
         st.markdown("""
-        <div class="alert-container">
-            <div class="no-alerts">
-                <div class="no-alerts-icon">✅</div>
-                <div class="no-alerts-text">All Clear</div>
-                <div style="color: #666; font-size: 0.85rem; margin-top: 0.5rem;">
-                    No alerts detected
-                </div>
-            </div>
+        <div class="empty-state">
+            <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">🛡️</div>
+            <div style="font-weight: 600;">System Secure</div>
+            <div style="font-size: 0.9rem;">No threats detected</div>
         </div>
         """, unsafe_allow_html=True)
         return
     
-    # Show last 5 alerts
-    recent_alerts = alerts[-5:]
+    # Show last 8 alerts
+    recent_alerts = alerts[-8:]
     
-    alerts_html = '<div class="alert-container">'
+    html = '<div class="alert-feed">'
     
-    for alert in reversed(recent_alerts):
+    # We loop simply; the CSS flex-direction: column-reverse handles visual order if we dump them in order
+    # BUT typically recent is top. CSS `column-reverse` puts the LAST element at the TOP.
+    # So if we append alerts in chronological order (oldest -> newest), the last one (newest) will be at the top.
+    
+    for alert in recent_alerts:
         alert_type = alert.get('type', 'info')
-        message = alert.get('message', 'Unknown alert')
+        message = alert.get('message', 'Unknown event')
+        timestamp = alert.get('time', '--:--')
         
-        if alert_type == 'warning':
-            icon = '⚠️'
-            css_class = 'alert-item'
+        # Split message if it follows "[Source] Description" pattern
+        if ']' in message:
+            source, content = message.split(']', 1)
+            source = source.strip('[').strip()
+            content = content.strip()
         else:
-            icon = '🔔'
-            css_class = 'alert-item'
+            source = "System"
+            content = message
+            
+        icon = "⚠️" if alert_type == 'warning' else "ℹ️"
+        css_class = alert_type
         
-        timestamp = alert.get('time', '')
-        alerts_html += f"""
-        <div class="{css_class}">
-            <div class="alert-icon">{icon}</div>
-            <div class="alert-text">
-                <span style="color: #888; font-size: 0.75rem;">[{timestamp}]</span><br>
-                {message}
+        html += f"""
+        <div class="alert-card {css_class}">
+            <div class="alert-icon-box">{icon}</div>
+            <div class="alert-content">
+                <div class="alert-header">
+                    <span class="alert-title">{source}</span>
+                    <span class="alert-time">{timestamp}</span>
+                </div>
+                <div class="alert-message">{content}</div>
             </div>
         </div>
         """
     
-    alerts_html += '</div>'
-    
-    st.markdown(alerts_html, unsafe_allow_html=True)
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
