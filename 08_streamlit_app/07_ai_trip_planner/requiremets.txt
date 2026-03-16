@@ -1,0 +1,11 @@
+# ── Core ──────────────────────────────────────
+langchain-core>=0.3.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# ── LLM Providers (install what you need) ─────
+langchain-openai>=0.2.0
+langchain-ollama>=0.2.0
+
+# ── UI ────────────────────────────────────────
+streamlit>=1.35.0

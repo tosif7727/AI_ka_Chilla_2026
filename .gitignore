@@ -1,0 +1,47 @@
+# Python-related files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.env
+*.venv
+venv/
+ENV/
+env/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Virtual environment
+.venv/
+
+# VS Code settings
+.vscode/
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Streamlit-specific files
+.streamlit/
+
+# Ignore data files
+*.csv
+*.json
+*.xlsx
+*.h5
+*.db
+
+# Ignore HTML reports
+*.html
+
+# Ignore other temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+*.orig
